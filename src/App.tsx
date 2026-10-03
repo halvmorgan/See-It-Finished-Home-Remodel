@@ -13,7 +13,7 @@ type OfferKey = 'a' | 'b';
 // Paste the Stripe payment links here when they are created.
 const STRIPE_LINKS: Record<OfferKey, string> = {
   a: 'https://buy.stripe.com/7sYfZi2L7crrf3f4d63VC0y',
-  b: '',
+  b: 'https://buy.stripe.com/aFa6oIbhD2QR1cp10U3VC0z',
 };
 
 const STEPS = [
@@ -76,7 +76,7 @@ const OFFER_COPY: Record<OfferKey, {
       'Paint, siding, roof, driveway, landscaping, doors, windows and trim',
       'Your access code the same day you sign up',
     ],
-    guarantee: '30-day money back on everything you paid. If it does not help you sell, email me within 30 days and I refund you.',
+    guarantee: '',
     cta: 'Get started',
     scarcity: 'Founding price for early customers only.',
   },
@@ -645,10 +645,12 @@ export default function App() {
                 </li>
               ))}
             </ul>
-            <div className="mt-5 rounded-lg bg-teal-50 border border-teal-200 p-4 text-sm">
-              <span className="font-bold">Guarantee: </span>
-              {copy.guarantee}
-            </div>
+            {copy.guarantee && (
+              <div className="mt-5 rounded-lg bg-teal-50 border border-teal-200 p-4 text-sm">
+                <span className="font-bold">Guarantee: </span>
+                {copy.guarantee}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleCheckout}
