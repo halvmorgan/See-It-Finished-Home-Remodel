@@ -1,0 +1,6 @@
+{
+  "name": "See It Finished",
+  "description": "AI-powered real estate exterior before-and-after makeover preview tool. Transform curb appeal with paint, siding, roofing, driveway, landscaping, doors, and trim.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
