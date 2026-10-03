@@ -8,6 +8,91 @@ import { MakeoverSelections, SampleHomePreset } from './types/makeover';
 import { INITIAL_SELECTIONS, SAMPLE_HOMES } from './data/presets';
 import { countSelectedUpgrades } from './utils/promptBuilder';
 
+// ---- Sales page: two offers split-tested 50/50 (force one with ?offer=a or ?offer=b) ----
+type OfferKey = 'a' | 'b';
+// Paste the Stripe payment links here when they are created.
+const STRIPE_LINKS: Record<OfferKey, string> = {
+  a: 'https://buy.stripe.com/7sYfZi2L7crrf3f4d63VC0y',
+  b: '',
+};
+
+const STEPS = [
+  { title: 'Take one photo', text: 'Snap the front of the house with a phone, or upload a photo the homeowner sends.' },
+  { title: 'Pick the finishes', text: 'Paint colors, siding, roof, driveway, landscaping, doors and windows. Keep what stays.' },
+  { title: 'See it finished', text: 'In about a minute you get a before-and-after of that exact house, ready to show or send.' },
+];
+
+const OFFER_COPY: Record<OfferKey, {
+  eyebrow: string; headline: string; sub: string; steps: typeof STEPS;
+  why: { title: string; text: string }[]; offerName: string; price: string; priceNote: string;
+  monthly: string; includes: string[]; guarantee: string; cta: string; scarcity: string;
+}> = {
+  a: {
+    eyebrow: 'For painters, roofers, siding, landscaping and exterior contractors',
+    headline: 'Let homeowners see their house finished, before they ever call you.',
+    sub: 'Put See It Finished on your website with your name on it. Homeowners upload a photo, choose colors and materials, and see their own home finished in about a minute. You get their name, phone and project, and they call already excited.',
+    steps: STEPS,
+    why: [
+      { title: 'More leads from the same website', text: 'Most contractor sites only have a contact form. "See your house finished" gives visitors a reason to leave their info today.' },
+      { title: 'Warmer calls', text: 'The homeowner has already pictured the result with your company name on it. You start the estimate halfway to yes.' },
+      { title: 'Bigger jobs', text: 'Once they see new siding and trim together, paint-only becomes paint plus trim. Showing beats telling.' },
+    ],
+    offerName: 'Done For You: Your Branded See It Finished',
+    price: '$497 setup',
+    priceNote: 'normally $997',
+    monthly: '+ $197/month. Cancel anytime.',
+    includes: [
+      'Your own See It Finished with your logo, colors and service area',
+      'A "See your home finished" button and page for your website',
+      'Every homeowner who tries it comes to you as a lead: name, phone, email and their choices',
+      'Printable QR flyer for yard signs, trucks and leave-behinds',
+      '3 ready-to-post social media captions',
+      'Set up within 7 days of a 20-minute setup call',
+    ],
+    guarantee: 'If your See It Finished does not bring you at least one homeowner lead in 60 days, I refund your setup fee.',
+    cta: 'Claim a founding spot',
+    scarcity: 'Founding price is limited to the first 5 contractors.',
+  },
+  b: {
+    eyebrow: 'For painters, roofers, siding, landscaping and exterior contractors',
+    headline: 'Show the homeowner their house finished, right at the kitchen table.',
+    sub: 'Snap a photo during the estimate, pick colors and materials together, and show them their own home finished in about a minute. Fewer "let me think about it." More yeses, and bigger jobs.',
+    steps: STEPS,
+    why: [
+      { title: 'Close on the first visit', text: 'People buy what they can see. A finished picture of their own house answers "what will it look like?" on the spot.' },
+      { title: 'Upsell without pushing', text: 'Show paint plus new shutters and a new door side by side. Let the homeowner pick the bigger job.' },
+      { title: 'Follow up with something they want', text: 'Text or email the before-and-after card. It gets shown to the spouse, and you stay top of mind.' },
+    ],
+    offerName: 'Sales Tool: See It Finished in Your Pocket',
+    price: '$79/month',
+    priceNote: 'normally $97',
+    monthly: 'No setup fee. Founding price stays as long as you stay. Cancel anytime.',
+    includes: [
+      'Works on your phone, tablet or laptop, nothing to install',
+      'Up to 100 makeovers a month',
+      'Download before-and-after cards to text or email the homeowner',
+      'Paint, siding, roof, driveway, landscaping, doors, windows and trim',
+      'Start the same day you sign up',
+    ],
+    guarantee: '30-day money back. If it does not help you sell, email me within 30 days and I refund you.',
+    cta: 'Start for $79/month',
+    scarcity: 'Founding price for early customers only.',
+  },
+};
+
+const TRADES = [
+  'House painting', 'Roofing', 'Siding', 'Windows and doors', 'Landscaping', 'Hardscape / pavers',
+  'Driveway / concrete', 'Fencing / decks', 'General contractor / remodeler', 'Real estate agent', 'Other',
+];
+
+const FAQ = [
+  { q: 'Is the picture real?', a: 'It is a design preview made from the actual photo of the house, so the shape, windows and surroundings stay the same. Each image is labeled "AI design preview" because real colors and materials will vary.' },
+  { q: 'What kind of photos work best?', a: 'A straight-on photo of the front of the house in daylight, with the whole house in the frame.' },
+  { q: 'Which trades is it for?', a: 'Anyone who changes how a house looks from the street: painters, roofers, siding, windows and doors, landscapers, hardscape, driveways, fences, decks and exterior remodelers.' },
+  { q: 'Do homeowners see my name?', a: 'With the Done For You plan, yes: it carries your logo, colors and contact info, and leads come straight to you.' },
+  { q: 'Can I cancel?', a: 'Yes. The monthly plan can be cancelled anytime.' },
+];
+
 export default function App() {
   // Image & Makeover State
   // Default to the first sample home for immediate visual richness and testing
@@ -75,10 +160,98 @@ export default function App() {
     }
   };
 
+  // Sales page: which offer this visitor sees (kept the same on return visits)
+  const [offer] = useState<OfferKey>(() => {
+    const pick = (): OfferKey => (Math.random() < 0.5 ? 'a' : 'b');
+    try {
+      const q = new URLSearchParams(window.location.search).get('offer');
+      if (q === 'a' || q === 'b') {
+        localStorage.setItem('sif_offer', q);
+        return q;
+      }
+      const saved = localStorage.getItem('sif_offer');
+      if (saved === 'a' || saved === 'b') return saved;
+      const p = pick();
+      localStorage.setItem('sif_offer', p);
+      return p;
+    } catch {
+      return pick();
+    }
+  });
+  const [demoForm, setDemoForm] = useState({ name: '', company: '', email: '', phone: '', trade: '' });
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [isRequestingDemo, setIsRequestingDemo] = useState<boolean>(false);
+  const [isDemoVisitor, setIsDemoVisitor] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('sif_demo') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const track = (event: 'view' | 'checkout') => {
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offer, event }),
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!accessToken) track('view');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCheckout = () => {
+    track('checkout');
+    const link = STRIPE_LINKS[offer];
+    if (link) {
+      window.location.href = link;
+    } else {
+      // No payment link yet: send them to the demo form instead.
+      document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleDemoRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isRequestingDemo) return;
+    setIsRequestingDemo(true);
+    setDemoError(null);
+    try {
+      const res = await fetch('/api/demo-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...demoForm, offer }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.token) {
+        try {
+          sessionStorage.setItem('sif_demo', '1');
+        } catch {
+          /* ignore */
+        }
+        setIsDemoVisitor(true);
+        saveToken(data.token, 'invite');
+        window.scrollTo(0, 0);
+      } else {
+        setDemoError(data.error || 'Could not start your demo. Please try again.');
+      }
+    } catch {
+      setDemoError('Could not reach the server. Please try again.');
+    } finally {
+      setIsRequestingDemo(false);
+    }
+  };
+
   // Owner tools: one-time invite codes (1 makeover each, expire after 48 hours)
   type InviteRow = { code: string; note: string; createdAt: number; expiresAt: number; used: boolean };
   const [inviteNote, setInviteNote] = useState<string>('');
-  const [newInvite, setNewInvite] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [newInvite, setNewInvite] = useState<{ code: string; expiresAt: number; kind: string } | null>(null);
+  type OfferStats = { views: number; demos: number; checkoutClicks: number };
+  type LeadRow = { name: string; company: string; email: string; phone: string; trade: string; offer: string; code: string; createdAt: number };
+  const [results, setResults] = useState<{ stats: Record<string, OfferStats>; leads: LeadRow[] } | null>(null);
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState<boolean>(false);
@@ -103,15 +276,24 @@ export default function App() {
     }
   };
 
-  const createInvite = async () => {
+  const loadResults = async () => {
+    try {
+      const data = await ownerPost('/api/owner/results');
+      if (data.ok) setResults({ stats: data.stats, leads: data.leads || [] });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const createInvite = async (kind: 'demo' | 'pro' = 'demo') => {
     if (isCreatingInvite) return;
     setIsCreatingInvite(true);
     setInviteMsg(null);
     setCopied(false);
     try {
-      const data = await ownerPost('/api/invites', { note: inviteNote });
+      const data = await ownerPost('/api/invites', { note: inviteNote, kind });
       if (data.ok && data.code) {
-        setNewInvite({ code: data.code, expiresAt: data.expiresAt });
+        setNewInvite({ code: data.code, expiresAt: data.expiresAt, kind: data.kind || kind });
         setInviteNote('');
         loadInvites();
       } else {
@@ -124,9 +306,11 @@ export default function App() {
     }
   };
 
-  const inviteMessage = newInvite
-    ? `Try See It Finished here: getseeitfinished.com - your one-time code is ${newInvite.code} (good for 1 makeover, expires in 48 hours).`
-    : '';
+  const inviteMessage = !newInvite
+    ? ''
+    : newInvite.kind === 'pro'
+      ? 'Welcome to See It Finished! Go to getseeitfinished.com, scroll to "Already have a code?" and enter your access code ' + newInvite.code + '. It is good for 100 makeovers over the next 31 days. Keep it private.'
+      : 'Try See It Finished here: getseeitfinished.com - scroll to "Already have a code?" and enter your one-time code ' + newInvite.code + ' (good for 1 makeover, expires in 48 hours).';
 
   const copyInvite = async () => {
     try {
@@ -138,7 +322,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (accessToken && role === 'owner') loadInvites();
+    if (accessToken && role === 'owner') {
+      loadInvites();
+      loadResults();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, role]);
 
@@ -363,42 +550,177 @@ export default function App() {
   };
 
   if (!accessToken) {
+    const copy = OFFER_COPY[offer];
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center px-4">
-        <form
-          onSubmit={handleSignIn}
-          className="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-2xl p-6 sm:p-8 shadow-xl"
-        >
-          <div className="flex items-baseline gap-1.5 text-2xl font-bold tracking-tight">
-            <span>See It Finished</span>
-            <span className="w-2 h-2 rounded-full bg-teal-400 inline-block" />
+      <div className="min-h-screen bg-white text-slate-900 antialiased">
+        {/* Top bar */}
+        <header className="bg-slate-900 text-white">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+            <div className="flex items-baseline gap-1.5 text-lg font-bold">
+              <span>See It Finished</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 inline-block" />
+            </div>
+            <a href="#demo" className="rounded-lg bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-sm font-semibold">
+              Try it free
+            </a>
           </div>
-          <p className="mt-2 text-sm text-slate-300">
-            Demo preview - by invitation. Enter the code you were given.
+        </header>
+
+        {/* Hero */}
+        <section className="bg-slate-900 text-white">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 pb-14 grid lg:grid-cols-2 gap-10 items-center">
+            <div>
+              <p className="text-teal-300 text-xs sm:text-sm font-semibold uppercase tracking-wide">{copy.eyebrow}</p>
+              <h1 className="mt-3 text-3xl sm:text-5xl font-bold leading-tight">{copy.headline}</h1>
+              <p className="mt-4 text-slate-300 text-base sm:text-lg">{copy.sub}</p>
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <a href="#demo" className="text-center rounded-lg bg-teal-600 hover:bg-teal-500 px-5 py-3 font-semibold">
+                  Try it free on a demo house
+                </a>
+                <a href="#offer" className="text-center rounded-lg border border-slate-500 hover:border-teal-400 px-5 py-3 font-semibold">
+                  See the founding offer
+                </a>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <figure className="relative">
+                <img src={SAMPLE_HOMES[0].beforeImage} alt="House before" className="rounded-xl w-full h-56 sm:h-72 object-cover" />
+                <figcaption className="absolute top-2 left-2 bg-slate-900/80 text-xs font-semibold px-2 py-1 rounded">BEFORE</figcaption>
+              </figure>
+              <figure className="relative">
+                <img src={SAMPLE_HOMES[0].afterImage} alt="Same house, design preview after" className="rounded-xl w-full h-56 sm:h-72 object-cover" />
+                <figcaption className="absolute top-2 left-2 bg-teal-600 text-xs font-semibold px-2 py-1 rounded">FINISHED</figcaption>
+              </figure>
+              <p className="col-span-2 text-xs text-slate-400">Design preview made from one photo. Real colors and materials will vary.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+          <h2 className="text-2xl sm:text-3xl font-bold text-center">How it works</h2>
+          <div className="mt-8 grid sm:grid-cols-3 gap-6">
+            {copy.steps.map((s, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 p-5">
+                <div className="w-8 h-8 rounded-full bg-teal-600 text-white font-bold flex items-center justify-center">{i + 1}</div>
+                <h3 className="mt-3 font-bold">{s.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{s.text}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-sm text-slate-600">
+            Paint colors, siding and accents, roof and solar, driveway, landscaping, garage door, front door, windows and trim.
           </p>
-          <label htmlFor="sif-passcode" className="block mt-6 text-xs font-medium text-slate-400">
-            Code
-          </label>
-          <input
-            id="sif-passcode"
-            type="password"
-            autoComplete="off"
-            value={passcodeInput}
-            onChange={(e) => setPasscodeInput(e.target.value)}
-            className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-600 px-3 py-2.5 text-white focus:outline-none focus:border-teal-400"
-          />
-          {authError && <p className="mt-3 text-sm text-amber-300">{authError}</p>}
-          <button
-            type="submit"
-            disabled={isSigningIn || !passcodeInput.trim()}
-            className="mt-5 w-full rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 py-2.5 font-semibold transition-colors"
-          >
-            {isSigningIn ? 'Checking...' : 'Enter'}
-          </button>
-          <p className="mt-5 text-xs text-slate-400">
-            Need access? Contact Ecentra Concierge at ecentraconcierge.com.
-          </p>
-        </form>
+        </section>
+
+        {/* Why it pays */}
+        <section className="bg-slate-50">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid md:grid-cols-3 gap-6">
+            {copy.why.map((w, i) => (
+              <div key={i}>
+                <h3 className="font-bold text-lg">{w.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{w.text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Offer */}
+        <section id="offer" className="max-w-3xl mx-auto px-4 sm:px-6 py-14">
+          <div className="rounded-2xl border-2 border-teal-500 p-6 sm:p-8 shadow-sm">
+            <p className="text-teal-700 text-xs font-bold uppercase tracking-wide">Founding offer</p>
+            <h2 className="mt-1 text-2xl sm:text-3xl font-bold">{copy.offerName}</h2>
+            <div className="mt-4 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-4xl font-bold">{copy.price}</span>
+              <span className="text-slate-600">{copy.priceNote}</span>
+            </div>
+            <p className="mt-1 font-semibold text-slate-800">{copy.monthly}</p>
+            <ul className="mt-5 space-y-2">
+              {copy.includes.map((x, i) => (
+                <li key={i} className="flex gap-2 text-sm sm:text-base">
+                  <span className="text-teal-600 font-bold">✓</span>
+                  <span>{x}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 rounded-lg bg-teal-50 border border-teal-200 p-4 text-sm">
+              <span className="font-bold">Guarantee: </span>
+              {copy.guarantee}
+            </div>
+            <button
+              type="button"
+              onClick={handleCheckout}
+              className="mt-6 w-full rounded-lg bg-teal-600 hover:bg-teal-500 py-3.5 text-lg font-bold text-white"
+            >
+              {copy.cta}
+            </button>
+            <p className="mt-2 text-center text-xs text-slate-500">Secure checkout by Stripe. {copy.scarcity}</p>
+          </div>
+        </section>
+
+        {/* Demo form */}
+        <section id="demo" className="bg-slate-900 text-white">
+          <div className="max-w-xl mx-auto px-4 sm:px-6 py-14">
+            <h2 className="text-2xl sm:text-3xl font-bold text-center">Try it free: 1 makeover on us</h2>
+            <p className="mt-2 text-center text-slate-300">Get instant access. No credit card. Use a demo house or a photo of a real house.</p>
+            <form onSubmit={handleDemoRequest} className="mt-6 grid gap-3">
+              <input required maxLength={80} value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="Your name" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
+              <input required maxLength={120} value={demoForm.company} onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })} placeholder="Company name" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
+              <input required type="email" maxLength={160} value={demoForm.email} onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })} placeholder="Email" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
+              <input type="tel" maxLength={40} value={demoForm.phone} onChange={(e) => setDemoForm({ ...demoForm, phone: e.target.value })} placeholder="Phone (optional)" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
+              <select value={demoForm.trade} onChange={(e) => setDemoForm({ ...demoForm, trade: e.target.value })} className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400">
+                <option value="">What do you do?</option>
+                {TRADES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              {demoError && <p className="text-amber-300 text-sm">{demoError}</p>}
+              <button type="submit" disabled={isRequestingDemo} className="rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 py-3 font-bold">
+                {isRequestingDemo ? 'Setting up your demo...' : 'Start my free demo'}
+              </button>
+              <p className="text-xs text-slate-400">By starting the demo you agree Ecentra Concierge may contact you about See It Finished. Photos are used only to make your preview.</p>
+            </form>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+          <h2 className="text-2xl font-bold text-center">Questions</h2>
+          <div className="mt-6 space-y-4">
+            {FAQ.map((f, i) => (
+              <details key={i} className="rounded-lg border border-slate-200 p-4">
+                <summary className="font-semibold cursor-pointer">{f.q}</summary>
+                <p className="mt-2 text-sm text-slate-600">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        {/* Code sign-in */}
+        <section className="bg-slate-50 border-t border-slate-200">
+          <form onSubmit={handleSignIn} className="max-w-md mx-auto px-4 py-8">
+            <label htmlFor="sif-passcode" className="block text-sm font-semibold text-slate-700">Already have a code?</label>
+            <div className="mt-2 flex gap-2">
+              <input
+                id="sif-passcode"
+                type="password"
+                autoComplete="off"
+                value={passcodeInput}
+                onChange={(e) => setPasscodeInput(e.target.value)}
+                placeholder="Enter your code"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:border-teal-500"
+              />
+              <button type="submit" disabled={isSigningIn || !passcodeInput.trim()} className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold disabled:opacity-50">
+                {isSigningIn ? '...' : 'Enter'}
+              </button>
+            </div>
+            {authError && <p className="mt-2 text-sm text-amber-700">{authError}</p>}
+          </form>
+        </section>
+
+        <footer className="py-6 text-center text-xs text-slate-500">
+          See It Finished by Ecentra Concierge · ecentraconcierge.com · Design previews are illustrations; actual results will vary.
+        </footer>
       </div>
     );
   }
@@ -418,6 +740,26 @@ export default function App() {
 
       {/* Main Workspace Area: Left Photo Workspace, Right Customization */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {role === 'invite' && (
+          <section className="mb-6 rounded-xl bg-slate-900 text-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-bold">
+                {isDemoVisitor ? 'Your free demo is ready: 1 makeover. ' : ''}
+                Pick a demo house or upload a photo, choose the finishes, then press Generate.
+              </p>
+              <p className="text-sm text-slate-300">
+                Like it? {OFFER_COPY[offer].offerName}: {OFFER_COPY[offer].price} ({OFFER_COPY[offer].priceNote}). {OFFER_COPY[offer].monthly}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCheckout}
+              className="shrink-0 rounded-lg bg-teal-600 hover:bg-teal-500 px-4 py-2.5 font-semibold"
+            >
+              {OFFER_COPY[offer].cta}
+            </button>
+          </section>
+        )}
         {role === 'owner' && (
           <section className="mb-6 rounded-xl border border-teal-200 bg-white p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -435,18 +777,30 @@ export default function App() {
               </div>
               <button
                 type="button"
-                onClick={createInvite}
+                onClick={() => createInvite('demo')}
                 disabled={isCreatingInvite}
                 className="rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white"
               >
                 {isCreatingInvite ? 'Creating...' : 'Create invite code'}
+              </button>
+              <button
+                type="button"
+                onClick={() => createInvite('pro')}
+                disabled={isCreatingInvite}
+                title="For paid Sales Tool customers: 100 makeovers, 31 days"
+                className="rounded-lg border border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 px-4 py-2 text-sm font-semibold"
+              >
+                Create Pro code (paid)
               </button>
             </div>
             {inviteMsg && <p className="mt-3 text-sm text-amber-700">{inviteMsg}</p>}
             {newInvite && (
               <div className="mt-3 rounded-lg bg-teal-50 border border-teal-200 p-3 text-sm">
                 <div className="font-mono text-lg font-bold text-teal-800">{newInvite.code}</div>
-                <div className="text-xs text-slate-600">Expires {new Date(newInvite.expiresAt).toLocaleString()}</div>
+                <div className="text-xs text-slate-600">
+                  {newInvite.kind === 'pro' ? 'Pro code: 100 makeovers. ' : 'Invite code: 1 makeover. '}
+                  Expires {new Date(newInvite.expiresAt).toLocaleString()}
+                </div>
                 <p className="mt-2 text-slate-700">{inviteMessage}</p>
                 <button
                   type="button"
@@ -457,18 +811,75 @@ export default function App() {
                 </button>
               </div>
             )}
+            {results && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-500">Split test: which offer is winning</div>
+                  <button type="button" onClick={loadResults} className="text-xs text-teal-700 underline">Refresh</button>
+                </div>
+                <table className="mt-1 w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="py-1">Offer</th>
+                      <th>Visitors</th>
+                      <th>Free demos</th>
+                      <th>Clicked buy</th>
+                      <th>Demo rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(['a', 'b'] as OfferKey[]).map((o) => {
+                      const s = results.stats[o] || { views: 0, demos: 0, checkoutClicks: 0 };
+                      const rate = s.views ? Math.round((s.demos / s.views) * 100) + '%' : '-';
+                      return (
+                        <tr key={o} className="border-t border-slate-100">
+                          <td className="py-1.5 font-semibold">{o === 'a' ? 'A: Done For You ($497 + $197/mo)' : 'B: Sales Tool ($79/mo)'}</td>
+                          <td>{s.views}</td>
+                          <td>{s.demos}</td>
+                          <td>{s.checkoutClicks}</td>
+                          <td>{rate}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="mt-1 text-[11px] text-slate-500">Actual sales: check each payment link in Stripe. Preview a page: getseeitfinished.com/?offer=a or ?offer=b (that browser then keeps seeing it).</p>
+                {results.leads.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-slate-500 mb-1">Free demo requests (newest first)</div>
+                    <ul className="divide-y divide-slate-100 text-xs">
+                      {results.leads.map((l) => (
+                        <li key={l.code + l.email} className="py-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span className="font-semibold text-slate-800">{l.company}</span>
+                          <span>{l.name}</span>
+                          <a className="text-teal-700 underline" href={'mailto:' + l.email}>{l.email}</a>
+                          {l.phone && <a className="text-teal-700 underline" href={'tel:' + l.phone}>{l.phone}</a>}
+                          <span className="text-slate-500">{l.trade}</span>
+                          <span className="text-slate-500">Offer {String(l.offer).toUpperCase()}</span>
+                          <span className="text-slate-400">{new Date(l.createdAt).toLocaleString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
             {invites.length > 0 && (
               <div className="mt-4">
                 <div className="text-xs font-semibold text-slate-500 mb-1">Recent codes</div>
                 <ul className="divide-y divide-slate-100 text-xs">
                   {invites.map((iv) => {
                     const status = iv.used ? 'Used' : Date.now() > iv.expiresAt ? 'Expired' : 'Not used yet';
+                    const usage = (iv as { maxUses?: number; uses?: number }).maxUses && (iv as { maxUses?: number }).maxUses! > 1
+                      ? ' (' + ((iv as { uses?: number }).uses || 0) + '/' + (iv as { maxUses?: number }).maxUses + ')'
+                      : '';
                     return (
                       <li key={iv.code} className="flex flex-wrap justify-between gap-2 py-1.5">
                         <span className="font-mono text-slate-800">{iv.code}</span>
                         <span className="text-slate-500 truncate">{iv.note}</span>
                         <span className={iv.used ? 'text-slate-500' : status === 'Expired' ? 'text-amber-700' : 'text-teal-700 font-semibold'}>
                           {status}
+                          {usage}
                         </span>
                       </li>
                     );

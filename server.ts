@@ -30,6 +30,8 @@ const sessions = new Map<string, Session>();
 const INVITES = 'sif_invites';
 const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // codes expire 48 hours after they are created
 const INVITE_MAX_USES = 1; // makeovers per code
+const PRO_TTL_MS = 31 * 24 * 60 * 60 * 1000; // paid Sales Tool codes: 31 days
+const PRO_MAX_USES = 100; // paid Sales Tool codes: 100 makeovers
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 let _db: Firestore | null = null;
 const db = () => (_db ??= new Firestore({ databaseId: process.env.FIRESTORE_DATABASE_ID || 'default', ignoreUndefinedProperties: true }));
@@ -117,7 +119,15 @@ app.post('/api/access', async (req: Request, res: Response) => {
     attempts.delete(ip);
     const token = crypto.randomBytes(32).toString('hex');
     sessions.set(token, { expires: now + SESSION_TTL_MS, day: today(), count: 0, role: 'invite', code });
-    return res.json({ ok: true, token, role: 'invite' });
+    let kind = 'demo';
+    try {
+      const snap = await db().collection(INVITES).doc(code).get();
+      kind = ((snap.data() || {}) as { kind?: string }).kind || 'demo';
+    } catch {
+      /* ignore */
+    }
+    // 'pro' only changes what the browser shows (no sales banner); limits are still enforced per code.
+    return res.json({ ok: true, token, role: kind === 'pro' ? 'pro' : 'invite' });
   }
 
   return fail('Incorrect code.');
@@ -145,6 +155,10 @@ app.post('/api/invites', async (req: Request, res: Response) => {
   const s = getSession(req);
   if (!s || s.role !== 'owner') return res.json({ ok: false, error: 'Only the owner can create invite codes.' });
   const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 100) : '';
+  // kind 'pro' = paid Sales Tool customer: 100 makeovers, good for 31 days.
+  const kind = req.body?.kind === 'pro' ? 'pro' : 'demo';
+  const ttl = kind === 'pro' ? PRO_TTL_MS : INVITE_TTL_MS;
+  const maxUses = kind === 'pro' ? PRO_MAX_USES : INVITE_MAX_USES;
   try {
     for (let i = 0; i < 5; i++) {
       const code = newCode();
@@ -153,8 +167,8 @@ app.post('/api/invites', async (req: Request, res: Response) => {
         await db()
           .collection(INVITES)
           .doc(code)
-          .create({ createdAt: now, expiresAt: now + INVITE_TTL_MS, maxUses: INVITE_MAX_USES, uses: 0, note });
-        return res.json({ ok: true, code, expiresAt: now + INVITE_TTL_MS, note });
+          .create({ createdAt: now, expiresAt: now + ttl, maxUses, uses: 0, note, kind, source: 'owner' });
+        return res.json({ ok: true, code, expiresAt: now + ttl, note, kind, maxUses });
       } catch (e: unknown) {
         if ((e as { code?: number })?.code === 6) continue; // code already exists: try another
         throw e;
@@ -175,12 +189,154 @@ app.post('/api/invites/list', async (req: Request, res: Response) => {
     const snap = await db().collection(INVITES).orderBy('createdAt', 'desc').limit(20).get();
     const invites = snap.docs.map((d) => {
       const x = d.data() as InviteDoc;
-      return { code: d.id, note: x.note || '', createdAt: x.createdAt, expiresAt: x.expiresAt, used: (x.uses || 0) >= (x.maxUses || 1) };
+      return {
+        code: d.id,
+        note: x.note || '',
+        createdAt: x.createdAt,
+        expiresAt: x.expiresAt,
+        used: (x.uses || 0) >= (x.maxUses || 1),
+        uses: x.uses || 0,
+        maxUses: x.maxUses || 1,
+        kind: (x as { kind?: string }).kind || 'demo',
+        source: (x as { source?: string }).source || 'owner',
+      };
     });
     return res.json({ ok: true, invites });
   } catch (e: unknown) {
     console.error('[invites] list failed:', (e as Error)?.message);
     return res.json({ ok: false, error: 'Invite codes are not available yet (the database is not set up).' });
+  }
+});
+
+// ---- Public sales page: split test (offer A vs B) + instant demo requests ----
+const LEADS = 'sif_leads';
+const STATS = 'sif_stats';
+const OFFERS = ['a', 'b'];
+const cleanOffer = (o: unknown) => (typeof o === 'string' && OFFERS.includes(o) ? o : 'a');
+const trackSeen = new Map<string, number>(); // ip|offer|event -> last time (stops refresh-spam)
+const demoByIp = new Map<string, { count: number; day: string }>();
+const bump = (offer: string, field: string) =>
+  db().collection(STATS).doc(offer).set({ [field]: FieldValue.increment(1), updatedAt: Date.now() }, { merge: true });
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, t] of trackSeen) if (now - t > 6 * 60 * 60 * 1000) trackSeen.delete(k);
+  for (const [k, d] of demoByIp) if (d.day !== today()) demoByIp.delete(k);
+}, 60 * 60 * 1000).unref();
+
+app.post('/api/track', async (req: Request, res: Response) => {
+  const offer = cleanOffer(req.body?.offer);
+  const event = req.body?.event === 'checkout' ? 'checkoutClicks' : req.body?.event === 'view' ? 'views' : null;
+  if (!event) return res.json({ ok: false });
+  const key = clientIp(req) + '|' + offer + '|' + event;
+  const last = trackSeen.get(key) || 0;
+  if (Date.now() - last < 6 * 60 * 60 * 1000) return res.json({ ok: true, counted: false });
+  trackSeen.set(key, Date.now());
+  try {
+    await bump(offer, event);
+  } catch (e: unknown) {
+    console.error('[track] failed:', (e as Error)?.message);
+  }
+  return res.json({ ok: true, counted: true });
+});
+
+app.post('/api/demo-request', async (req: Request, res: Response) => {
+  const b = req.body || {};
+  const str = (x: unknown, max: number) => (typeof x === 'string' ? x.trim().slice(0, max) : '');
+  const name = str(b.name, 80);
+  const company = str(b.company, 120);
+  const email = str(b.email, 160).toLowerCase();
+  const phone = str(b.phone, 40);
+  const trade = str(b.trade, 60);
+  const offer = cleanOffer(b.offer);
+  if (!name || !company) return res.json({ ok: false, error: 'Please enter your name and company.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.json({ ok: false, error: 'Please enter a valid email address.' });
+
+  const ip = clientIp(req);
+  const d = demoByIp.get(ip);
+  if (d && d.day === today() && d.count >= 3) {
+    return res.json({ ok: false, error: 'Too many demo requests from this connection today. Please try again tomorrow.' });
+  }
+
+  try {
+    const leadId = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32);
+    const leadRef = db().collection(LEADS).doc(leadId);
+    const existing = await leadRef.get();
+    let code: string | null = null;
+    if (existing.exists) {
+      const prev = existing.data() as { code?: string };
+      if (prev.code) {
+        const problem = await checkInvite(prev.code);
+        if (!problem) code = prev.code; // still unused: give the same code back
+        else if (problem === USED_MSG) {
+          return res.json({
+            ok: false,
+            alreadyUsed: true,
+            error: 'You have already used your free demo with this email. Pick a plan below or contact Ecentra Concierge.',
+          });
+        }
+      }
+    }
+    if (!code) {
+      for (let i = 0; i < 5 && !code; i++) {
+        const c = newCode();
+        const now = Date.now();
+        try {
+          await db().collection(INVITES).doc(c).create({
+            createdAt: now,
+            expiresAt: now + INVITE_TTL_MS,
+            maxUses: INVITE_MAX_USES,
+            uses: 0,
+            note: company,
+            kind: 'demo',
+            source: 'sales-page',
+            offer,
+          });
+          code = c;
+        } catch (e: unknown) {
+          if ((e as { code?: number })?.code !== 6) throw e;
+        }
+      }
+      if (!code) return res.json({ ok: false, error: 'Could not create your demo. Please try again.' });
+      await leadRef.set(
+        { name, company, email, phone, trade, offer, code, createdAt: Date.now(), ip },
+        { merge: true }
+      );
+      bump(offer, 'demos').catch(() => {});
+    }
+    demoByIp.set(ip, { count: (d && d.day === today() ? d.count : 0) + 1, day: today() });
+    const token = crypto.randomBytes(32).toString('hex');
+    sessions.set(token, { expires: Date.now() + SESSION_TTL_MS, day: today(), count: 0, role: 'invite', code });
+    return res.json({ ok: true, token, role: 'invite', code });
+  } catch (e: unknown) {
+    console.error('[demo-request] failed:', (e as Error)?.message);
+    return res.json({ ok: false, error: 'Demos are not available right now. Please try again later.' });
+  }
+});
+
+// Owner only: split-test results + recent sales-page leads.
+app.post('/api/owner/results', async (req: Request, res: Response) => {
+  const s = getSession(req);
+  if (!s || s.role !== 'owner') return res.json({ ok: false, error: 'Owner only.' });
+  try {
+    const stats: Record<string, { views: number; demos: number; checkoutClicks: number }> = {};
+    for (const o of OFFERS) {
+      const snap = await db().collection(STATS).doc(o).get();
+      const x = (snap.exists ? snap.data() : {}) as { views?: number; demos?: number; checkoutClicks?: number };
+      stats[o] = { views: x.views || 0, demos: x.demos || 0, checkoutClicks: x.checkoutClicks || 0 };
+    }
+    const leadSnap = await db().collection(LEADS).orderBy('createdAt', 'desc').limit(30).get();
+    const leads = leadSnap.docs.map((doc) => {
+      const x = doc.data() as Record<string, unknown>;
+      return {
+        name: x.name, company: x.company, email: x.email, phone: x.phone, trade: x.trade,
+        offer: x.offer, code: x.code, createdAt: x.createdAt,
+      };
+    });
+    return res.json({ ok: true, stats, leads });
+  } catch (e: unknown) {
+    console.error('[owner/results] failed:', (e as Error)?.message);
+    return res.json({ ok: false, error: 'Results are not available right now.' });
   }
 });
 
