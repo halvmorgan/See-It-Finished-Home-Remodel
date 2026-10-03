@@ -32,7 +32,7 @@ const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // codes expire 48 hours after they a
 const INVITE_MAX_USES = 1; // makeovers per code
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 let _db: Firestore | null = null;
-const db = () => (_db ??= new Firestore({ ignoreUndefinedProperties: true }));
+const db = () => (_db ??= new Firestore({ databaseId: process.env.FIRESTORE_DATABASE_ID || 'default', ignoreUndefinedProperties: true }));
 const newCode = () =>
   'SIF-' + Array.from({ length: 6 }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join('');
 const normalizeCode = (s: string) => s.trim().toUpperCase().replace(/\s+/g, '');
