@@ -51,16 +51,96 @@ export default function App() {
   const [passcodeInput, setPasscodeInput] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
-
-  const saveToken = (token: string | null) => {
-    setAccessToken(token);
+  const [role, setRole] = useState<string | null>(() => {
     try {
-      if (token) sessionStorage.setItem('sif_access_token', token);
-      else sessionStorage.removeItem('sif_access_token');
+      return sessionStorage.getItem('sif_role');
+    } catch {
+      return null;
+    }
+  });
+
+  const saveToken = (token: string | null, newRole: string | null = null) => {
+    setAccessToken(token);
+    setRole(token ? newRole : null);
+    try {
+      if (token) {
+        sessionStorage.setItem('sif_access_token', token);
+        if (newRole) sessionStorage.setItem('sif_role', newRole);
+      } else {
+        sessionStorage.removeItem('sif_access_token');
+        sessionStorage.removeItem('sif_role');
+      }
     } catch {
       /* storage unavailable: token stays in memory only */
     }
   };
+
+  // Owner tools: one-time invite codes (1 makeover each, expire after 48 hours)
+  type InviteRow = { code: string; note: string; createdAt: number; expiresAt: number; used: boolean };
+  const [inviteNote, setInviteNote] = useState<string>('');
+  const [newInvite, setNewInvite] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [invites, setInvites] = useState<InviteRow[]>([]);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const [isCreatingInvite, setIsCreatingInvite] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const ownerPost = async (url: string, body: object = {}) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(body),
+    });
+    return res.json().catch(() => ({}));
+  };
+
+  const loadInvites = async () => {
+    try {
+      const data = await ownerPost('/api/invites/list');
+      if (data.ok) setInvites(data.invites || []);
+      else if (data.error) setInviteMsg(data.error);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const createInvite = async () => {
+    if (isCreatingInvite) return;
+    setIsCreatingInvite(true);
+    setInviteMsg(null);
+    setCopied(false);
+    try {
+      const data = await ownerPost('/api/invites', { note: inviteNote });
+      if (data.ok && data.code) {
+        setNewInvite({ code: data.code, expiresAt: data.expiresAt });
+        setInviteNote('');
+        loadInvites();
+      } else {
+        setInviteMsg(data.error || 'Could not create a code.');
+      }
+    } catch {
+      setInviteMsg('Could not reach the server.');
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  };
+
+  const inviteMessage = newInvite
+    ? `Try See It Finished here: getseeitfinished.com - your one-time code is ${newInvite.code} (good for 1 makeover, expires in 48 hours).`
+    : '';
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteMessage);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  useEffect(() => {
+    if (accessToken && role === 'owner') loadInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, role]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +155,7 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (data.ok && data.token) {
-        saveToken(data.token);
+        saveToken(data.token, data.role || null);
         setPasscodeInput('');
       } else {
         setAuthError(data.error || `Could not sign in (code ${res.status}). Please try again.`);
@@ -294,10 +374,10 @@ export default function App() {
             <span className="w-2 h-2 rounded-full bg-teal-400 inline-block" />
           </div>
           <p className="mt-2 text-sm text-slate-300">
-            Demo preview - by invitation. Enter the passcode you were given.
+            Demo preview - by invitation. Enter the code you were given.
           </p>
           <label htmlFor="sif-passcode" className="block mt-6 text-xs font-medium text-slate-400">
-            Passcode
+            Code
           </label>
           <input
             id="sif-passcode"
@@ -338,6 +418,66 @@ export default function App() {
 
       {/* Main Workspace Area: Left Photo Workspace, Right Customization */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {role === 'owner' && (
+          <section className="mb-6 rounded-xl border border-teal-200 bg-white p-4 sm:p-5 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div className="flex-1">
+                <h2 className="text-sm font-bold text-slate-900">Owner: invite codes</h2>
+                <p className="text-xs text-slate-500">Each code works for 1 makeover and expires 48 hours after you create it.</p>
+                <input
+                  type="text"
+                  value={inviteNote}
+                  maxLength={100}
+                  onChange={(e) => setInviteNote(e.target.value)}
+                  placeholder="Who is it for? (optional, e.g. ABC Painting)"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:border-teal-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={createInvite}
+                disabled={isCreatingInvite}
+                className="rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white"
+              >
+                {isCreatingInvite ? 'Creating...' : 'Create invite code'}
+              </button>
+            </div>
+            {inviteMsg && <p className="mt-3 text-sm text-amber-700">{inviteMsg}</p>}
+            {newInvite && (
+              <div className="mt-3 rounded-lg bg-teal-50 border border-teal-200 p-3 text-sm">
+                <div className="font-mono text-lg font-bold text-teal-800">{newInvite.code}</div>
+                <div className="text-xs text-slate-600">Expires {new Date(newInvite.expiresAt).toLocaleString()}</div>
+                <p className="mt-2 text-slate-700">{inviteMessage}</p>
+                <button
+                  type="button"
+                  onClick={copyInvite}
+                  className="mt-2 rounded-md border border-teal-300 bg-white px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                >
+                  {copied ? 'Copied' : 'Copy message'}
+                </button>
+              </div>
+            )}
+            {invites.length > 0 && (
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-slate-500 mb-1">Recent codes</div>
+                <ul className="divide-y divide-slate-100 text-xs">
+                  {invites.map((iv) => {
+                    const status = iv.used ? 'Used' : Date.now() > iv.expiresAt ? 'Expired' : 'Not used yet';
+                    return (
+                      <li key={iv.code} className="flex flex-wrap justify-between gap-2 py-1.5">
+                        <span className="font-mono text-slate-800">{iv.code}</span>
+                        <span className="text-slate-500 truncate">{iv.note}</span>
+                        <span className={iv.used ? 'text-slate-500' : status === 'Expired' ? 'text-amber-700' : 'text-teal-700 font-semibold'}>
+                          {status}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column: Photo Workspace (7 cols on desktop) */}
           <div className="lg:col-span-7">
