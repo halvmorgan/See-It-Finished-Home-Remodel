@@ -240,6 +240,31 @@ app.post('/api/track', async (req: Request, res: Response) => {
   return res.json({ ok: true, counted: true });
 });
 
+// Kitchen Check split test: the kitchen-check.ai.studio page sends beacons here (text/plain, any origin).
+const KC_OFFERS = ['a', 'b'];
+app.post('/api/kc-track', express.text({ type: '*/*', limit: '2kb' }), async (req: Request, res: Response) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  let body: { offer?: string; event?: string } = {};
+  try {
+    body = JSON.parse(typeof req.body === 'string' ? req.body : '{}');
+  } catch {
+    return res.json({ ok: false });
+  }
+  const offer = typeof body.offer === 'string' && KC_OFFERS.includes(body.offer) ? body.offer : null;
+  const field = body.event === 'view' ? 'views' : body.event === 'demo' ? 'demos' : body.event === 'checkout' ? 'checkoutClicks' : null;
+  if (!offer || !field) return res.json({ ok: false });
+  const key = clientIp(req) + '|kc|' + offer + '|' + field;
+  const last = trackSeen.get(key) || 0;
+  if (Date.now() - last < 6 * 60 * 60 * 1000) return res.json({ ok: true, counted: false });
+  trackSeen.set(key, Date.now());
+  try {
+    await bump('kc_' + offer, field);
+  } catch (e: unknown) {
+    console.error('[kc-track] failed:', (e as Error)?.message);
+  }
+  return res.json({ ok: true, counted: true });
+});
+
 app.post('/api/demo-request', async (req: Request, res: Response) => {
   const b = req.body || {};
   const str = (x: unknown, max: number) => (typeof x === 'string' ? x.trim().slice(0, max) : '');
@@ -325,6 +350,11 @@ app.post('/api/owner/results', async (req: Request, res: Response) => {
       const x = (snap.exists ? snap.data() : {}) as { views?: number; demos?: number; checkoutClicks?: number };
       stats[o] = { views: x.views || 0, demos: x.demos || 0, checkoutClicks: x.checkoutClicks || 0 };
     }
+    for (const o of KC_OFFERS) {
+      const snap = await db().collection(STATS).doc('kc_' + o).get();
+      const x = (snap.exists ? snap.data() : {}) as { views?: number; demos?: number; checkoutClicks?: number };
+      stats['kc_' + o] = { views: x.views || 0, demos: x.demos || 0, checkoutClicks: x.checkoutClicks || 0 };
+    }
     const leadSnap = await db().collection(LEADS).orderBy('createdAt', 'desc').limit(30).get();
     const leads = leadSnap.docs.map((doc) => {
       const x = doc.data() as Record<string, unknown>;
@@ -333,7 +363,17 @@ app.post('/api/owner/results', async (req: Request, res: Response) => {
         offer: x.offer, code: x.code, createdAt: x.createdAt,
       };
     });
-    return res.json({ ok: true, stats, leads });
+    let kcLeads: Record<string, unknown>[] = [];
+    try {
+      const kcSnap = await db().collection('kc_leads').orderBy('createdAt', 'desc').limit(30).get();
+      kcLeads = kcSnap.docs.map((doc) => {
+        const x = doc.data() as Record<string, unknown>;
+        return { name: x.name, company: x.company, email: x.email, phone: x.phone, offer: x.offer, createdAt: x.createdAt };
+      });
+    } catch (e: unknown) {
+      console.error('[owner/results] kc leads failed:', (e as Error)?.message);
+    }
+    return res.json({ ok: true, stats, leads, kcLeads });
   } catch (e: unknown) {
     console.error('[owner/results] failed:', (e as Error)?.message);
     return res.json({ ok: false, error: 'Results are not available right now.' });

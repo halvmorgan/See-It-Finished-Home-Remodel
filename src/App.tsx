@@ -253,7 +253,7 @@ export default function App() {
   const [newInvite, setNewInvite] = useState<{ code: string; expiresAt: number; kind: string } | null>(null);
   type OfferStats = { views: number; demos: number; checkoutClicks: number };
   type LeadRow = { name: string; company: string; email: string; phone: string; trade: string; offer: string; code: string; createdAt: number };
-  const [results, setResults] = useState<{ stats: Record<string, OfferStats>; leads: LeadRow[] } | null>(null);
+  const [results, setResults] = useState<{ stats: Record<string, OfferStats>; leads: LeadRow[]; kcLeads?: LeadRow[] } | null>(null);
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState<boolean>(false);
@@ -281,7 +281,7 @@ export default function App() {
   const loadResults = async () => {
     try {
       const data = await ownerPost('/api/owner/results');
-      if (data.ok) setResults({ stats: data.stats, leads: data.leads || [] });
+      if (data.ok) setResults({ stats: data.stats, leads: data.leads || [], kcLeads: data.kcLeads || [] });
     } catch {
       /* ignore */
     }
@@ -847,6 +847,51 @@ export default function App() {
                     })}
                   </tbody>
                 </table>
+                {(results.stats['kc_a'] || results.stats['kc_b']) && (
+                  <>
+                    <div className="mt-4 text-xs font-semibold text-slate-500">Kitchen Check split test (kitchen-check.ai.studio)</div>
+                    <table className="mt-1 w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-slate-500">
+                          <th className="py-1">Offer</th>
+                          <th>Visitors</th>
+                          <th>Room checks</th>
+                          <th>Clicked buy</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {['kc_a', 'kc_b'].map((o) => {
+                          const s = results.stats[o] || { views: 0, demos: 0, checkoutClicks: 0 };
+                          return (
+                            <tr key={o} className="border-t border-slate-100">
+                              <td className="py-1.5 font-semibold">{o === 'kc_a' ? 'A: $497 + $297/mo' : 'B: $497 + $97/mo'}</td>
+                              <td>{s.views}</td>
+                              <td>{s.demos}</td>
+                              <td>{s.checkoutClicks}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {results.kcLeads && results.kcLeads.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs font-semibold text-slate-500 mb-1">Kitchen Check free demo requests (newest first)</div>
+                        <ul className="divide-y divide-slate-100 text-xs">
+                          {results.kcLeads.map((l) => (
+                            <li key={'kc' + l.email} className="py-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                              <span className="font-semibold text-slate-800">{l.company}</span>
+                              <span>{l.name}</span>
+                              <a className="text-teal-700 underline" href={'mailto:' + l.email}>{l.email}</a>
+                              {l.phone && <a className="text-teal-700 underline" href={'tel:' + l.phone}>{l.phone}</a>}
+                              <span className="text-slate-500">Offer {String(l.offer).toUpperCase()}</span>
+                              <span className="text-slate-400">{new Date(l.createdAt).toLocaleString()}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
                 <p className="mt-1 text-[11px] text-slate-500">Actual sales: check each payment link in Stripe. Preview a page: getseeitfinished.com/?offer=a or ?offer=b (that browser then keeps seeing it).</p>
                 {results.leads.length > 0 && (
                   <div className="mt-3">
