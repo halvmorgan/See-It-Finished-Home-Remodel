@@ -64,18 +64,20 @@ const OFFER_COPY: Record<OfferKey, {
       { title: 'Follow up with something they want', text: 'Text or email the before-and-after card. It gets shown to the spouse, and you stay top of mind.' },
     ],
     offerName: 'Sales Tool: See It Finished in Your Pocket',
-    price: '$79/month',
-    priceNote: 'normally $97',
-    monthly: 'No setup fee. Founding price stays as long as you stay. Cancel anytime.',
+    price: '$497 setup',
+    priceNote: 'then $79/month, normally $97',
+    monthly: 'Founding monthly price stays as long as you stay. Cancel anytime.',
     includes: [
+      '30-minute setup and training call for you and your sales team',
+      'A ready-to-use estimate script: how to show the makeover and close bigger jobs',
       'Works on your phone, tablet or laptop, nothing to install',
       'Up to 100 makeovers a month',
       'Download before-and-after cards to text or email the homeowner',
       'Paint, siding, roof, driveway, landscaping, doors, windows and trim',
-      'Start the same day you sign up',
+      'Your access code the same day you sign up',
     ],
-    guarantee: '30-day money back. If it does not help you sell, email me within 30 days and I refund you.',
-    cta: 'Start for $79/month',
+    guarantee: '30-day money back on everything you paid. If it does not help you sell, email me within 30 days and I refund you.',
+    cta: 'Get started',
     scarcity: 'Founding price for early customers only.',
   },
 };
@@ -833,7 +835,7 @@ export default function App() {
                       const rate = s.views ? Math.round((s.demos / s.views) * 100) + '%' : '-';
                       return (
                         <tr key={o} className="border-t border-slate-100">
-                          <td className="py-1.5 font-semibold">{o === 'a' ? 'A: Done For You ($497 + $197/mo)' : 'B: Sales Tool ($79/mo)'}</td>
+                          <td className="py-1.5 font-semibold">{o === 'a' ? 'A: Done For You ($497 + $197/mo)' : 'B: Sales Tool ($497 + $79/mo)'}</td>
                           <td>{s.views}</td>
                           <td>{s.demos}</td>
                           <td>{s.checkoutClicks}</td>
