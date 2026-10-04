@@ -138,6 +138,15 @@ export const PhotoWorkspace: React.FC<PhotoWorkspaceProps> = ({
             );
           })}
         </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="mt-1 w-full flex items-center justify-center gap-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 text-sm font-bold shadow-sm"
+        >
+          <UploadCloud className="w-5 h-5" />
+          Upload a photo of your own house
+        </button>
+        <p className="text-[11px] text-slate-500 text-center">Use a straight-on photo of the front of the house. JPG, PNG or WebP.</p>
       </div>
 
       {/* Error Banner */}

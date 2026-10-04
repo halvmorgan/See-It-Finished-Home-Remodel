@@ -352,6 +352,53 @@ export default function App() {
       ? 'Welcome to See It Finished! Go to getseeitfinished.com, scroll to "Already have a code?" and enter your access code ' + newInvite.code + '. It is good for 100 makeovers over the next 31 days. Keep it private.'
       : 'Try See It Finished here: getseeitfinished.com - scroll to "Already have a code?" and enter your one-time code ' + newInvite.code + ' (good for 1 makeover, expires in 48 hours).';
 
+  type KcCodeRow = { code: string; note: string; createdAt: number; expiresAt: number; maxUses: number; redeemed: boolean };
+  const [kcCodes, setKcCodes] = useState<KcCodeRow[]>([]);
+  const [newKcCode, setNewKcCode] = useState<{ code: string; expiresAt: number; maxUses: number } | null>(null);
+  const [kcNote, setKcNote] = useState<string>('');
+  const [kcMsg, setKcMsg] = useState<string | null>(null);
+  const [kcCopied, setKcCopied] = useState<boolean>(false);
+  const [isCreatingKc, setIsCreatingKc] = useState<boolean>(false);
+  const loadKcCodes = async () => {
+    try {
+      const data = await ownerPost('/api/kc-codes/list');
+      if (data.ok) setKcCodes(data.codes || []);
+    } catch {
+      /* ignore */
+    }
+  };
+  const createKcCode = async (maxUses: number) => {
+    if (isCreatingKc) return;
+    setIsCreatingKc(true);
+    setKcMsg(null);
+    setKcCopied(false);
+    try {
+      const data = await ownerPost('/api/kc-codes', { note: kcNote, maxUses });
+      if (data.ok && data.code) {
+        setNewKcCode({ code: data.code, expiresAt: data.expiresAt, maxUses: data.maxUses || maxUses });
+        setKcNote('');
+        loadKcCodes();
+      } else {
+        setKcMsg(data.error || 'Could not create a code.');
+      }
+    } catch {
+      setKcMsg('Could not reach the server.');
+    } finally {
+      setIsCreatingKc(false);
+    }
+  };
+  const kcMessage = !newKcCode
+    ? ''
+    : 'Here is your Kitchen Check code: ' + newKcCode.code + '. Go to getkitchencheck.com (or getbathcheck.com for bathrooms), click "Have a code?" and enter it. Good for ' + newKcCode.maxUses + (newKcCode.maxUses === 1 ? ' room check' : ' room checks') + ', expires in 48 hours.';
+  const copyKcCode = async () => {
+    try {
+      await navigator.clipboard.writeText(kcMessage);
+      setKcCopied(true);
+    } catch {
+      setKcCopied(false);
+    }
+  };
+
   const copyInvite = async () => {
     try {
       await navigator.clipboard.writeText(inviteMessage);
@@ -365,6 +412,7 @@ export default function App() {
     if (accessToken && role === 'owner') {
       loadInvites();
       loadResults();
+      loadKcCodes();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, role]);
@@ -827,6 +875,23 @@ export default function App() {
               ) : !modalCodeMode ? (
                 <form onSubmit={handleDemoRequest} className="mt-3 grid gap-2.5">
                   <p className="text-sm text-slate-600">This demo is for contractors. Tell us who you are and your makeover runs right away.</p>
+                  {selectedPresetId && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-900">
+                      Your free makeover will use the demo house.{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pendingGenerateRef.current = false;
+                          setDemoModalOpen(false);
+                          window.scrollTo(0, 0);
+                          (document.querySelector('input[type="file"]') as HTMLInputElement | null)?.click();
+                        }}
+                        className="font-bold underline text-teal-700"
+                      >
+                        Use a photo of my own house instead
+                      </button>
+                    </div>
+                  )}
                   <input required maxLength={80} value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="Your name" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
                   <input required maxLength={120} value={demoForm.company} onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })} placeholder="Company name" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
                   <input required type="email" maxLength={160} value={demoForm.email} onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })} placeholder="Email" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
@@ -929,6 +994,49 @@ export default function App() {
                 </button>
               </div>
             )}
+            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+              <h3 className="text-sm font-bold text-slate-900">Kitchen Check codes</h3>
+              <p className="text-xs text-slate-500">Give a remodeler more room checks on getkitchencheck.com / getbathcheck.com. Each code can be entered once and expires 48 hours after you create it.</p>
+              <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={kcNote}
+                  maxLength={100}
+                  onChange={(e) => setKcNote(e.target.value)}
+                  placeholder="Who is it for? (optional, e.g. Smith Remodeling)"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:border-teal-500"
+                />
+                <button type="button" onClick={() => createKcCode(1)} disabled={isCreatingKc} className="rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white">
+                  {isCreatingKc ? 'Creating...' : 'Create Kitchen Check code (1 check)'}
+                </button>
+                <button type="button" onClick={() => createKcCode(3)} disabled={isCreatingKc} className="rounded-lg border border-amber-600 text-amber-700 hover:bg-amber-50 disabled:opacity-50 px-4 py-2 text-sm font-semibold">
+                  3 checks
+                </button>
+              </div>
+              {kcMsg && <p className="mt-2 text-sm text-amber-700">{kcMsg}</p>}
+              {newKcCode && (
+                <div className="mt-3 rounded-lg bg-white border border-amber-200 p-3 text-sm">
+                  <div className="font-mono text-lg font-bold text-amber-800">{newKcCode.code}</div>
+                  <div className="text-xs text-slate-600">{newKcCode.maxUses} room {newKcCode.maxUses === 1 ? 'check' : 'checks'}. Expires {new Date(newKcCode.expiresAt).toLocaleString()}</div>
+                  <p className="mt-2 text-slate-700">{kcMessage}</p>
+                  <button type="button" onClick={copyKcCode} className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                    {kcCopied ? 'Copied' : 'Copy message'}
+                  </button>
+                </div>
+              )}
+              {kcCodes.length > 0 && (
+                <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                  {kcCodes.map((c) => (
+                    <li key={c.code} className="flex flex-wrap gap-x-3">
+                      <span className="font-mono font-semibold">{c.code}</span>
+                      <span>{c.maxUses} {c.maxUses === 1 ? 'check' : 'checks'}</span>
+                      <span>{c.redeemed ? 'Used' : Date.now() > c.expiresAt ? 'Expired' : 'Not used yet'}</span>
+                      {c.note && <span>{c.note}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {results && (
               <div className="mt-5">
                 <div className="flex items-center justify-between">

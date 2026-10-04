@@ -181,6 +181,54 @@ app.post('/api/invites', async (req: Request, res: Response) => {
   }
 });
 
+// Owner only: Kitchen Check codes (KC-XXXXXX). The Kitchen Check app redeems them under "Have a code?".
+const KC_CODES = 'kc_codes';
+const newKcCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = 'KC-';
+  for (let i = 0; i < 6; i++) c += chars[crypto.randomInt(chars.length)];
+  return c;
+};
+app.post('/api/kc-codes', async (req: Request, res: Response) => {
+  const s = getSession(req);
+  if (!s || s.role !== 'owner') return res.json({ ok: false, error: 'Only the owner can create Kitchen Check codes.' });
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 100) : '';
+  const maxUses = Math.max(1, Math.min(10, Number(req.body?.maxUses) || 1));
+  const ttl = 48 * 60 * 60 * 1000;
+  try {
+    for (let i = 0; i < 5; i++) {
+      const code = newKcCode();
+      const now = Date.now();
+      try {
+        await db().collection(KC_CODES).doc(code).create({ createdAt: now, expiresAt: now + ttl, maxUses, redeemed: false, note });
+        return res.json({ ok: true, code, expiresAt: now + ttl, maxUses, note });
+      } catch (e: unknown) {
+        if ((e as { code?: number })?.code === 6) continue;
+        throw e;
+      }
+    }
+    return res.json({ ok: false, error: 'Could not create a code. Please try again.' });
+  } catch (e: unknown) {
+    console.error('[kc-codes] create failed:', (e as Error)?.message);
+    return res.json({ ok: false, error: 'Kitchen Check codes are not available right now.' });
+  }
+});
+app.post('/api/kc-codes/list', async (req: Request, res: Response) => {
+  const s = getSession(req);
+  if (!s || s.role !== 'owner') return res.json({ ok: false, error: 'Owner only.' });
+  try {
+    const snap = await db().collection(KC_CODES).orderBy('createdAt', 'desc').limit(15).get();
+    const codes = snap.docs.map((d) => {
+      const x = d.data() as { createdAt: number; expiresAt: number; maxUses?: number; redeemed?: boolean; note?: string };
+      return { code: d.id, note: x.note || '', createdAt: x.createdAt, expiresAt: x.expiresAt, maxUses: x.maxUses || 1, redeemed: !!x.redeemed };
+    });
+    return res.json({ ok: true, codes });
+  } catch (e: unknown) {
+    console.error('[kc-codes] list failed:', (e as Error)?.message);
+    return res.json({ ok: false, error: 'Kitchen Check codes are not available right now.' });
+  }
+});
+
 // Owner only: the 20 most recent invite codes and whether they were used.
 app.post('/api/invites/list', async (req: Request, res: Response) => {
   const s = getSession(req);
