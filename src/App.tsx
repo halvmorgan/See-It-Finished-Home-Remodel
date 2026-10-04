@@ -854,7 +854,7 @@ export default function App() {
       />
 
       {/* Main Workspace Area: Left Photo Workspace, Right Customization */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {demoModalOpen && !accessToken && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" role="dialog" aria-modal="true">
             <div className="w-full max-w-md bg-white rounded-2xl p-6 sm:p-7 shadow-2xl text-left">
@@ -1161,8 +1161,8 @@ export default function App() {
           </section>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column: Photo Workspace (7 cols on desktop) */}
-          <div className="lg:col-span-7">
+          {/* Left Column: Photo Workspace (8 cols on desktop) */}
+          <div className="lg:col-span-8">
             <PhotoWorkspace
               originalImage={originalImage}
               generatedImage={generatedImage}
@@ -1180,8 +1180,8 @@ export default function App() {
             />
           </div>
 
-          {/* Right Column: Customization Controls (5 cols on desktop) */}
-          <div className="lg:col-span-5 sticky top-20">
+          {/* Right Column: Customization Controls (4 cols on desktop) */}
+          <div className="lg:col-span-4 sticky top-20">
             <CustomizationPanel
               selections={selections}
               onChange={setSelections}
@@ -1197,7 +1197,7 @@ export default function App() {
 
       {/* Clean Footer */}
       <footer className="mt-auto border-t border-slate-200 bg-white py-6 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-800">See It Finished</span>
             <span>·</span>
