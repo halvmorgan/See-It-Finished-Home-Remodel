@@ -13,7 +13,7 @@ type OfferKey = 'a' | 'b';
 // Paste the Stripe payment links here when they are created.
 const STRIPE_LINKS: Record<OfferKey, string> = {
   a: 'https://buy.stripe.com/7sYfZi2L7crrf3f4d63VC0y',
-  b: 'https://buy.stripe.com/aFa6oIbhD2QR1cp10U3VC0z',
+  b: 'https://buy.stripe.com/5kQbJ22L7dvv1cpdNG3VC0B',
 };
 
 const STEPS = [
@@ -38,9 +38,9 @@ const OFFER_COPY: Record<OfferKey, {
       { title: 'Bigger jobs', text: 'Once they see new siding and trim together, paint-only becomes paint plus trim. Showing beats telling.' },
     ],
     offerName: 'Done For You: Your Branded See It Finished',
-    price: '$497 setup',
-    priceNote: 'normally $997',
-    monthly: '+ $197/month. Cancel anytime.',
+    price: '$497 setup + $197/month',
+    priceNote: 'Regular price: $997 setup + $297/month',
+    monthly: 'Founding price: your $197/month is locked in for as long as you stay. Cancel anytime.',
     includes: [
       'Your own See It Finished with your logo, colors and service area',
       'A "See your home finished" button and page for your website',
@@ -51,7 +51,7 @@ const OFFER_COPY: Record<OfferKey, {
     ],
     guarantee: 'If your See It Finished does not bring you at least one homeowner lead in 60 days, I refund your setup fee.',
     cta: 'Claim a founding spot',
-    scarcity: 'Founding price is limited to the first 5 contractors.',
+    scarcity: 'Founding price is limited to the first 5 contractors. After that it goes to $997 setup + $297/month.',
   },
   b: {
     eyebrow: 'For painters, roofers, siding, landscaping and exterior contractors',
@@ -64,9 +64,9 @@ const OFFER_COPY: Record<OfferKey, {
       { title: 'Follow up with something they want', text: 'Text or email the before-and-after card. It gets shown to the spouse, and you stay top of mind.' },
     ],
     offerName: 'Sales Tool: See It Finished in Your Pocket',
-    price: '$497 setup',
-    priceNote: 'then $79/month, normally $97',
-    monthly: 'Founding monthly price stays as long as you stay. Cancel anytime.',
+    price: '$197 setup + $79/month',
+    priceNote: 'Regular price: $297 setup + $97/month',
+    monthly: 'Founding price: your $79/month is locked in for as long as you stay. Cancel anytime.',
     includes: [
       '30-minute setup and training call for you and your sales team',
       'A ready-to-use estimate script: how to show the makeover and close bigger jobs',
@@ -78,7 +78,7 @@ const OFFER_COPY: Record<OfferKey, {
     ],
     guarantee: '',
     cta: 'Get started',
-    scarcity: 'Founding price for early customers only.',
+    scarcity: 'Founding price is limited to the first 5 contractors. After that it goes to $297 setup + $97/month.',
   },
 };
 
@@ -766,7 +766,8 @@ export default function App() {
             >
               {copy.cta}
             </button>
-            <p className="mt-2 text-center text-xs text-slate-500">Secure checkout by Stripe. {copy.scarcity}</p>
+            <p className="mt-3 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-center text-sm font-semibold text-amber-900">{copy.scarcity}</p>
+            <p className="mt-2 text-center text-xs text-slate-500">Secure checkout by Stripe.</p>
           </div>
         </section>
 
@@ -1059,7 +1060,7 @@ export default function App() {
                       const rate = s.views ? Math.round((s.demos / s.views) * 100) + '%' : '-';
                       return (
                         <tr key={o} className="border-t border-slate-100">
-                          <td className="py-1.5 font-semibold">{o === 'a' ? 'A: Done For You ($497 + $197/mo)' : 'B: Sales Tool ($497 + $79/mo)'}</td>
+                          <td className="py-1.5 font-semibold">{o === 'a' ? 'A: Done For You ($497 + $197/mo)' : 'B: Sales Tool ($197 + $79/mo)'}</td>
                           <td>{s.views}</td>
                           <td>{s.demos}</td>
                           <td>{s.checkoutClicks}</td>
