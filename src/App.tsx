@@ -216,6 +216,42 @@ export default function App() {
     }
   };
 
+  // Visitors can open the app without a code; the demo form pops up when they press Generate.
+  const [browsing, setBrowsing] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('sif_browsing') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [demoModalOpen, setDemoModalOpen] = useState<boolean>(false);
+  // Remember on this device that the free makeover was used (survives closing the browser)
+  const sifDeviceUsed = () => {
+    try {
+      return localStorage.getItem('sif_device_used') === '1';
+    } catch {
+      return false;
+    }
+  };
+  const markSifDeviceUsed = () => {
+    try {
+      localStorage.setItem('sif_device_used', '1');
+    } catch {
+      /* ignore */
+    }
+  };
+  const [modalCodeMode, setModalCodeMode] = useState<boolean>(false);
+  const pendingGenerateRef = React.useRef<boolean>(false);
+  const startBrowsing = () => {
+    setBrowsing(true);
+    try {
+      sessionStorage.setItem('sif_browsing', '1');
+    } catch {
+      /* ignore */
+    }
+    window.scrollTo(0, 0);
+  };
+
   const handleDemoRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isRequestingDemo) return;
@@ -235,9 +271,11 @@ export default function App() {
           /* ignore */
         }
         setIsDemoVisitor(true);
+        setDemoModalOpen(false);
+        startBrowsing();
         saveToken(data.token, 'invite');
-        window.scrollTo(0, 0);
       } else {
+        if (data.alreadyUsed) markSifDeviceUsed();
         setDemoError(data.error || 'Could not start your demo. Please try again.');
       }
     } catch {
@@ -462,6 +500,14 @@ export default function App() {
       return;
     }
 
+    if (!accessToken) {
+      pendingGenerateRef.current = true;
+      setDemoError(null);
+      setModalCodeMode(false);
+      setDemoModalOpen(true);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -519,6 +565,7 @@ export default function App() {
 
       if (response.ok && data.image) {
         setGeneratedImage(data.image);
+        if (role === 'invite') markSifDeviceUsed();
         setLastRenderedSelections(JSON.parse(JSON.stringify(selections)));
         setIsLoading(false);
         return;
@@ -526,7 +573,10 @@ export default function App() {
 
       if (data.authRequired || response.status === 401) {
         saveToken(null);
-        setAuthError('Your access has expired. Please enter the passcode again.');
+        startBrowsing();
+        pendingGenerateRef.current = true;
+        setDemoError('Your access has expired. Please start your free demo again.');
+        setDemoModalOpen(true);
         return;
       }
 
@@ -534,6 +584,7 @@ export default function App() {
         // Never show a canned sample image as if it were a real result.
         setErrorMessage('The design engine is not available right now. Please try again later.');
       } else {
+        if (data.inviteUsed) markSifDeviceUsed();
         setErrorMessage(data.error || data.message || 'The makeover could not be created. Please try again.');
       }
     } catch (err: unknown) {
@@ -547,11 +598,20 @@ export default function App() {
     }
   };
 
+  // Run the makeover the visitor asked for as soon as the demo form gives them access.
+  useEffect(() => {
+    if (accessToken && pendingGenerateRef.current) {
+      pendingGenerateRef.current = false;
+      handleGenerate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
   const handleAddCredits = (amount: number) => {
     setCredits((prev) => prev + amount);
   };
 
-  if (!accessToken) {
+  if (!accessToken && !browsing) {
     const copy = OFFER_COPY[offer];
     return (
       <div className="min-h-screen bg-white text-slate-900 antialiased">
@@ -562,7 +622,7 @@ export default function App() {
               <span>See It Finished</span>
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 inline-block" />
             </div>
-            <a href="#demo" className="rounded-lg bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-sm font-semibold">
+            <a href="#" onClick={(e) => { e.preventDefault(); startBrowsing(); }} className="rounded-lg bg-teal-600 hover:bg-teal-500 px-3 py-1.5 text-sm font-semibold">
               Try it free
             </a>
           </div>
@@ -576,7 +636,7 @@ export default function App() {
               <h1 className="mt-3 text-3xl sm:text-5xl font-bold leading-tight">{copy.headline}</h1>
               <p className="mt-4 text-slate-300 text-base sm:text-lg">{copy.sub}</p>
               <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                <a href="#demo" className="text-center rounded-lg bg-teal-600 hover:bg-teal-500 px-5 py-3 font-semibold">
+                <a href="#" onClick={(e) => { e.preventDefault(); startBrowsing(); }} className="text-center rounded-lg bg-teal-600 hover:bg-teal-500 px-5 py-3 font-semibold">
                   Try it free on a demo house
                 </a>
                 <a href="#offer" className="text-center rounded-lg border border-slate-500 hover:border-teal-400 px-5 py-3 font-semibold">
@@ -666,8 +726,11 @@ export default function App() {
         <section id="demo" className="bg-slate-900 text-white">
           <div className="max-w-xl mx-auto px-4 sm:px-6 py-14">
             <h2 className="text-2xl sm:text-3xl font-bold text-center">Try it free: 1 makeover on us</h2>
-            <p className="mt-2 text-center text-slate-300">Get instant access. No credit card. Use a demo house or a photo of a real house.</p>
-            <form onSubmit={handleDemoRequest} className="mt-6 grid gap-3">
+            <p className="mt-2 text-center text-slate-300">No credit card. Use a demo house or a photo of a real house.</p>
+            <div className="mt-6 text-center">
+              <button type="button" onClick={startBrowsing} className="rounded-lg bg-teal-600 hover:bg-teal-500 px-8 py-3.5 text-lg font-bold">Try it free now</button>
+            </div>
+            <form onSubmit={handleDemoRequest} className="hidden">
               <input required maxLength={80} value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="Your name" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
               <input required maxLength={120} value={demoForm.company} onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })} placeholder="Company name" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
               <input required type="email" maxLength={160} value={demoForm.email} onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })} placeholder="Email" className="rounded-lg bg-slate-800 border border-slate-600 px-3 py-2.5 focus:outline-none focus:border-teal-400" />
@@ -744,11 +807,62 @@ export default function App() {
 
       {/* Main Workspace Area: Left Photo Workspace, Right Customization */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {role === 'invite' && (
+        {demoModalOpen && !accessToken && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center px-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-md bg-white rounded-2xl p-6 sm:p-7 shadow-2xl text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">For contractors</p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-900">{modalCodeMode ? 'Enter your code' : 'Get your free makeover'}</h2>
+                </div>
+                <button type="button" onClick={() => setDemoModalOpen(false)} className="text-2xl leading-none text-slate-400 hover:text-slate-900" aria-label="Close">×</button>
+              </div>
+              {!modalCodeMode && sifDeviceUsed() ? (
+                <div className="mt-3">
+                  <p className="text-sm text-slate-700">This device has already used its free makeover. To keep making makeovers, grab a founding spot.</p>
+                  <button type="button" onClick={handleCheckout} className="mt-4 w-full rounded-lg bg-teal-600 hover:bg-teal-500 py-3 font-bold text-white">
+                    {OFFER_COPY[offer].cta}
+                  </button>
+                </div>
+              ) : !modalCodeMode ? (
+                <form onSubmit={handleDemoRequest} className="mt-3 grid gap-2.5">
+                  <p className="text-sm text-slate-600">This demo is for contractors. Tell us who you are and your makeover runs right away.</p>
+                  <input required maxLength={80} value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="Your name" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
+                  <input required maxLength={120} value={demoForm.company} onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })} placeholder="Company name" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
+                  <input required type="email" maxLength={160} value={demoForm.email} onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })} placeholder="Email" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
+                  <input type="tel" maxLength={40} value={demoForm.phone} onChange={(e) => setDemoForm({ ...demoForm, phone: e.target.value })} placeholder="Phone (optional)" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
+                  <select value={demoForm.trade} onChange={(e) => setDemoForm({ ...demoForm, trade: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500">
+                    <option value="">What do you do?</option>
+                    {TRADES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  {demoError && <p className="text-sm text-red-700">{demoError}</p>}
+                  <button type="submit" disabled={isRequestingDemo} className="mt-1 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 py-3 font-bold text-white">
+                    {isRequestingDemo ? 'One moment...' : 'Make my free makeover'}
+                  </button>
+                  <p className="text-[11px] text-slate-500">By starting the demo you agree Ecentra Concierge may contact you about See It Finished. Photos are used only to make your preview.</p>
+                </form>
+              ) : (
+                <form onSubmit={handleSignIn} className="mt-4 grid gap-2.5">
+                  <input type="password" autoComplete="off" value={passcodeInput} onChange={(e) => setPasscodeInput(e.target.value)} placeholder="Your code" className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-teal-500" />
+                  {authError && <p className="text-sm text-red-700">{authError}</p>}
+                  <button type="submit" disabled={isSigningIn || !passcodeInput.trim()} className="rounded-lg bg-slate-900 text-white py-3 font-bold disabled:opacity-50">
+                    {isSigningIn ? 'Checking...' : 'Enter'}
+                  </button>
+                </form>
+              )}
+              <button type="button" onClick={() => setModalCodeMode(!modalCodeMode)} className="mt-3 w-full text-xs text-slate-500 hover:text-teal-700">
+                {modalCodeMode ? 'Back to the free demo' : 'Already have a code?'}
+              </button>
+            </div>
+          </div>
+        )}
+        {(role === 'invite' || !accessToken) && (
           <section className="mb-6 rounded-xl bg-slate-900 text-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <p className="font-bold">
-                {isDemoVisitor ? 'Your free demo is ready: 1 makeover. ' : ''}
+                {!accessToken ? 'Free demo: 1 makeover. ' : isDemoVisitor ? 'Your free demo is ready: 1 makeover. ' : ''}
                 Pick a demo house or upload a photo, choose the finishes, then press Generate.
               </p>
               <p className="text-sm text-slate-300">
